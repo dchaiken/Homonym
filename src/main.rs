@@ -2,6 +2,8 @@
 mod HomonymInterpreter;
 mod HomonymLexer;
 mod HomonymParser;
+mod HomonymTypechecker;
+mod HomonymUtils;
 
 use regex::Regex;
 

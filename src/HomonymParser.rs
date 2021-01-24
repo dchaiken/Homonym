@@ -1,7 +1,7 @@
 use crate::HomonymLexer::Token;
+use crate::HomonymUtils::{check_parens_valid, extract_typenames};
 use logos::{Lexer, Logos};
-use regex::Regex;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 #[derive(PartialEq, Debug)]
 pub enum Expression {
@@ -10,29 +10,31 @@ pub enum Expression {
     FLTVAL(f64),
     STRINGVAL(String),
     TEXT(String),
-    TYPEREF(String),
-    PLUS(Box<Expression>, Box<Expression>),
-    MINUS(Box<Expression>, Box<Expression>),
-    TIMES(Box<Expression>, Box<Expression>),
-    DIVIDEDBY(Box<Expression>, Box<Expression>),
+    PLUS(String, String, Box<Expression>, Box<Expression>),
+    MINUS(String, String, Box<Expression>, Box<Expression>),
+    TIMES(String, String, Box<Expression>, Box<Expression>),
+    DIVIDEDBY(String, String, Box<Expression>, Box<Expression>),
+    LET(String, String, Box<Expression>),
+    IF(
+        String,
+        Box<Expression>,
+        Vec<Box<Expression>>,
+        Vec<Box<Expression>>,
+    ),
+    FUNCTION(String, HashMap<String, String>, Vec<Box<Expression>>),
+    RETURN(String, Box<Expression>),
 }
 
-// This function is necessary because Logos doesn't support extracting multiple values from a token...
-pub fn extract_typenames(type_str: &str) -> Vec<String> {
-    let re = Regex::new(r"([`_a-zA-Z][`_a-zA-Z0-9]*)").unwrap();
-    re.captures_iter(type_str)
-        .map(|cap| String::from(&cap[0]))
-        .collect()
+pub enum VariableValue {
+    INT(i64),
+    STRING(String),
+    FLOAT(f64),
+    BOOL(bool),
 }
 
-pub fn match_expression_to_typename_str(expr: &Expression) -> &str {
-    match expr {
-        Expression::BOOLEAN(_) => "bool",
-        Expression::INTVAL(_) => "int",
-        Expression::FLTVAL(_) => "float",
-        Expression::STRINGVAL(_) => "string",
-        _ => panic!(""),
-    }
+pub struct Context {
+    variable_map: HashMap<String, HashMap<String, VariableValue>>,
+    function_map: HashMap<String, Expression>,
 }
 
 // Return precedence of a token (lower should be evaluated first)
@@ -60,27 +62,42 @@ fn get_max_priority_operator(tokens: &Vec<Token>) -> usize {
     })
 }
 
-fn check_parens_valid(tokens: &Vec<Token>) -> bool {
-    let mut parens_deque = VecDeque::<Token>::new();
-    for token in tokens {
-        if *token == Token::LPAREN {
-            parens_deque.push_back(Token::LPAREN);
-        } else if *token == Token::RPAREN {
-            if parens_deque.is_empty() {
-                return false;
-            } else {
-                // check last token to allow for other character checks later
-                if parens_deque.pop_back().unwrap() != Token::LPAREN {
-                    return false;
-                }
-            }
-        }
-    }
-    true
-}
-
 fn split_binary_operator_expr(lex_vec: &Vec<Token>, split_ind: usize) -> Expression {
-    Expression::STRINGVAL("TODO!!!".to_string())
+    if let Token::TYPEREF(typeref) = &lex_vec[split_ind + 1] {
+        let typenames = extract_typenames(typeref);
+        assert_eq!(typenames.len(), 2);
+        let lsplit: &Vec<Token> = &lex_vec[..split_ind].to_vec();
+        let rsplit: &Vec<Token> = &lex_vec[split_ind + 2..].to_vec();
+        match lex_vec[split_ind] {
+            Token::PLUS => Expression::PLUS(
+                typenames[0].clone(),
+                typenames[1].clone(),
+                Box::<Expression>::new(parse_step(lsplit)),
+                Box::<Expression>::new(parse_step(rsplit)),
+            ),
+            Token::DASH => Expression::MINUS(
+                typenames[0].clone(),
+                typenames[1].clone(),
+                Box::<Expression>::new(parse_step(lsplit)),
+                Box::<Expression>::new(parse_step(rsplit)),
+            ),
+            Token::STAR => Expression::TIMES(
+                typenames[0].clone(),
+                typenames[1].clone(),
+                Box::<Expression>::new(parse_step(lsplit)),
+                Box::<Expression>::new(parse_step(rsplit)),
+            ),
+            Token::FSLASH => Expression::DIVIDEDBY(
+                typenames[0].clone(),
+                typenames[1].clone(),
+                Box::<Expression>::new(parse_step(lsplit)),
+                Box::<Expression>::new(parse_step(rsplit)),
+            ),
+            _ => panic!("{:?} isn't a valid binary operator!", lex_vec[split_ind]),
+        }
+    } else {
+        panic!("Binary operator at location {} is not accompanied by a type reference");
+    }
 }
 
 pub fn parse_step(lex_vec: &Vec<Token>) -> Expression {
@@ -98,25 +115,10 @@ pub fn parse_step(lex_vec: &Vec<Token>) -> Expression {
     } else {
         //Find highest precedence operator, then split there
         let split_ind: usize = get_max_priority_operator(lex_vec);
-        let lsplit: &Vec<Token> = &lex_vec[..split_ind].to_vec();
-        let rsplit: &Vec<Token> = &lex_vec[split_ind + 1..].to_vec();
         match lex_vec[split_ind] {
-            Token::PLUS => Expression::PLUS(
-                Box::<Expression>::new(parse_step(lsplit)),
-                Box::<Expression>::new(parse_step(rsplit)),
-            ),
-            Token::DASH => Expression::MINUS(
-                Box::<Expression>::new(parse_step(lsplit)),
-                Box::<Expression>::new(parse_step(rsplit)),
-            ),
-            Token::STAR => Expression::TIMES(
-                Box::<Expression>::new(parse_step(lsplit)),
-                Box::<Expression>::new(parse_step(rsplit)),
-            ),
-            Token::FSLASH => Expression::DIVIDEDBY(
-                Box::<Expression>::new(parse_step(lsplit)),
-                Box::<Expression>::new(parse_step(rsplit)),
-            ),
+            Token::PLUS | Token::DASH | Token::STAR | Token::FSLASH => {
+                split_binary_operator_expr(lex_vec, split_ind)
+            }
             _ => panic!("I didn't know how to parse that!"),
         }
     }

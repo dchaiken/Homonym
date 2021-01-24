@@ -82,6 +82,8 @@ pub enum Token {
     TRUE,
     #[token("false")]
     FALSE,
+    #[token("()")]
+    UNIT,
     #[regex(r"-?[0-9]+", |lex| lex.slice().parse::<i64>().unwrap())]
     INTVAL(i64),
     #[regex(r"-?[0-9]*\.[0-9]+", |lex| lex.slice().parse::<f64>().unwrap())]
