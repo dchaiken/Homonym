@@ -37,6 +37,17 @@ pub struct Context {
     function_map: HashMap<String, Expression>,
 }
 
+impl Context {
+    pub fn new() -> Context {
+        let mut variable_map: HashMap<String, HashMap<String, VariableValue>> = HashMap::new();
+        let mut function_map: HashMap<String, Expression> = HashMap::new();
+        Context {
+            variable_map,
+            function_map,
+        }
+    }
+}
+
 // Return precedence of a token (lower should be evaluated first)
 pub fn operator_precendence(token: &Token) -> i64 {
     match token {
